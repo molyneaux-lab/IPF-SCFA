@@ -1,0 +1,16 @@
+birds                   Birds resource use data
+combinespecies          Combines species from a community table
+coverage                Coverage of a set of indicators
+indicators              Indicator analysis for species combinations
+multipatt               Multi-level pattern analysis
+nichecentroid           Resource niche metrics for a single niche
+nichedispl              Metrics to compare pairs of resource niches
+pigeons                 Pigeon seed consumption data
+plotniche               Draws a single resource niche
+predict.indicators      Predicts site group from indicators
+pruneindicators         Determines the best subset of indicators
+signassoc               Statistical significance of species site-group
+                        associations
+strassoc                Strength of species site-group associations
+summary.multipatt       Summarizing multi-level pattern analysis
+wetland                 Wetland vegetation data set

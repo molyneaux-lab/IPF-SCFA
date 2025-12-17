@@ -1,0 +1,11 @@
+  bibentry("Article",
+         header = "To cite 'indicspecies' package in publications use:",
+         footer = "Thank you for using 'indicspecies'",
+         title = "Associations between species and groups of sites: indices and statistical inference",
+         author = c(person("Miquel", "De Cáceres"),
+                    person("Pierre", "Legendre")),
+         journal = "Ecology",
+         year = "2009",
+         volume = "90",
+         pages = "3566-3574",
+         doi = "10.1890/08-1823.1")
