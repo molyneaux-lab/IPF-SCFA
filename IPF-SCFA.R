@@ -111,17 +111,56 @@ demo_table = metadata %>%
             N_Current_Smoker = sum(Smoking_history == "Current-smoker", na.rm = TRUE),
             N_current_percent = round(N_Current_Smoker/n()*100),
             N_Nodata_smoker = sum(is.na(Smoking_history)),
-            N_nodata_percent = round(N_Nodata_smoker/n()*100))
+            N_nodata_percent = round(N_Nodata_smoker/n()*100),
+            N_reflux = sum(reflux == "Yes", na.rm=TRUE),
+            N_reflux_percent = round(N_reflux/n()*100))
+view(t(demo_table))
 
 metadata_table1 = metadata %>%
   filter(!Diagnosis == "Negative Controls") %>%
   mutate(Sex = as.factor(Sex),
-         Smoking_history = as.factor(Smoking_history))
+         Smoking_history = ifelse(Smoking_history == "Current-smoker", "Ex-smoker", Smoking_history),
+         Smoking_history = as.factor(Smoking_history),
+         reflux = as.factor(reflux))
 wilcox.test(Age ~ Diagnosis, metadata_table1)
 wilcox.test(FVCpp ~ Diagnosis, metadata_table1)
 wilcox.test(`DLCO % pred` ~ Diagnosis, metadata_table1)
 fisher.test(metadata$Smoking_history, metadata$Diagnosis)
 chisq.test(metadata$Sex, metadata$Diagnosis)
+
+# Demo table for GC-MS samples
+demo_table_GCMS = metadata %>%
+  filter(!is.na(Age) & !is.na(`Butyric acid`)) %>%
+  group_by(Diagnosis) %>%
+  summarise(mean_age = round(mean(Age)),
+            sd_age = sd(Age),
+            sex_M = sum(Sex == "M"),
+            sex_M_prop = round(sex_M/n()*100),
+            FVC_pp = round(mean(FVCpp, na.rm = T)),
+            FVC_pp_sd = round(sd(FVCpp, na.rm = T)),
+            DLCO_pp = round(mean(`DLCO % pred`, na.rm = T)),
+            DLCO_pp_sd = round(sd(`DLCO % pred`, na.rm = T)),
+            N_Never_Smoked = sum(Smoking_history == "Never-smoker", na.rm = TRUE),
+            N_never_percent =  round(N_Never_Smoked/n()*100),
+            N_Ex_Smoker = sum(Smoking_history == "Ex-smoker", na.rm = TRUE),
+            N_ex_percent = round(N_Ex_Smoker/n()*100),
+            N_Current_Smoker = sum(Smoking_history == "Current-smoker", na.rm = TRUE),
+            N_current_percent = round(N_Current_Smoker/n()*100),
+            N_Nodata_smoker = sum(is.na(Smoking_history)),
+            N_nodata_percent = round(N_Nodata_smoker/n()*100),
+            N_reflux = sum(reflux == "Yes", na.rm=TRUE),
+            N_reflux_percent = round(N_reflux/n()*100))
+
+metadata_table2 = metadata %>%
+  filter(!is.na(`Butyric acid`)) %>%
+  mutate(Sex = as.factor(Sex),
+         Smoking_history = ifelse(Smoking_history == "Current-smoker", "Ex-smoker", Smoking_history),
+         Smoking_history = as.factor(Smoking_history))
+wilcox.test(Age ~ Diagnosis, metadata_table2)
+wilcox.test(FVCpp ~ Diagnosis, metadata_table2)
+wilcox.test(`DLCO % pred` ~ Diagnosis, metadata_table2)
+fisher.test(metadata_table2$Smoking_history, metadata_table2$Diagnosis)
+chisq.test(metadata_table2$Sex, metadata_table2$Diagnosis)
 
 sample_data(physeq)<-mapping # metadata dataframe becomes the sample_data slot of physeq object
 #view(sample_data(physeq))  
@@ -323,7 +362,7 @@ otu_table<-as.data.frame(Controls_Genus@otu_table)
 otu_table.all <- as.data.frame(Controls_Genus.all@otu_table)
 
 write.table(otu_table,file="Genus/Genus-relative-abundance.txt", col.names=NA, row.names=T,sep="\t")
-write.table(otu_table,file="Genus/Genus-all-samples-relative-abundance.txt", col.names=NA, row.names=T,sep="\t")
+write.table(otu_table.all,file="Genus/Genus-all-samples-relative-abundance.txt", col.names=NA, row.names=T,sep="\t")
 
 #### Joining reads with clinical metadata ####
 ## Have joined clinical metadata to the taxonomic reads. 
@@ -337,6 +376,13 @@ reads_genus <- as.data.frame(t(reads_genus))
 reads_genus <- rownames_to_column(reads_genus, var = "sample-id")
 reads_genus_metadata <- right_join(metadata_clean, reads_genus)
 write_csv(reads_genus_metadata, "Genus/Genus-normalised-metadata.csv")
+
+reads_genus_all <- read_tsv("Genus/Genus-all-samples-relative-abundance.txt")
+reads_genus_all <- column_to_rownames(reads_genus_all, var = "...1")
+reads_genus_all <- as.data.frame(t(reads_genus_all))
+reads_genus_all <- rownames_to_column(reads_genus_all, var = "sample-id")
+reads_genus_all_metadata <- right_join(metadata_clean, reads_genus_all)
+write_csv(reads_genus_all_metadata, "Genus/Genus-all-normalised-metadata.csv")
 
 reads_family <- read_tsv("family/family-relative-abundance.txt")
 reads_family <- column_to_rownames(reads_family, var = "...1")
@@ -509,7 +555,7 @@ ggplot(ten_genus_long[ten_genus_long$Diagnosis=="IPF",],
     aspect.ratio = 0.5
   )
 
-ggsave("Genus/Stackedbarplot-outliers.tiff", width=20, height=18)
+ggsave("Genus/Stackedbarplot-outliers.svg", width=20, height=18)
 
 # BRU.03754, BRU.03715 is mainly "Others"
 # BRU.05380, BRU.03720, BRU.04110 "Others" and "Unknown"
@@ -520,7 +566,16 @@ ggsave("Genus/Stackedbarplot-outliers.tiff", width=20, height=18)
 
 #### Heatmap to see if "outliers" cluster together ####
 set.seed(123)
-top <- abund_genus[,order(colSums(abund_genus),decreasing=TRUE)]
+genus_all = read_csv("Genus/Genus-all-normalised-metadata.csv")
+abund_genus_all <- genus_all %>%
+  dplyr::select(1,Actinomyces:ncol(genus_all))
+abund_genus_all <- column_to_rownames(abund_genus_all, var="sample-id")
+rowSums(abund_genus_all)
+
+meta_table <- genus_all %>%
+  dplyr::select(`sample-id`, Diagnosis)
+
+top <- abund_genus_all[,order(colSums(abund_genus_all),decreasing=TRUE)]
 N <- 30
 taxa_list <- colnames(top)[1:N]
 N <- length(taxa_list)
@@ -528,9 +583,9 @@ top <- data.frame(top[,colnames(top) %in% taxa_list])
 top
 
 # Make a dataframe "other" that contains all of the other genera. You can alter these as you want.
-other <- abund_genus[,order(colSums(abund_genus),decreasing=TRUE)]
+other <- abund_genus_all[,order(colSums(abund_genus_all),decreasing=TRUE)]
 # Extract list of top N Taxa
-N <- dim(genus)[2]
+N <- dim(genus_all)[2]
 taxa_list2 <- colnames(other)[31:N]
 N <- length(taxa_list2)
 Others <- data.frame(other[,colnames(other) %in% taxa_list2])
@@ -565,7 +620,8 @@ colour_palette <- colorRampPalette(colors=c("white",
 annot_df1 <- data.frame(Diagnosis = meta_table$Diagnosis)
 
 col1 = list(Diagnosis = c("Controls" = "#BC3C29FF",
-                          "IPF" = "#0072B5FF"))
+                          "IPF" = "#0072B5FF",
+                          "Negative Control" = "snow4"))
 library(ComplexHeatmap)
 sidebar_annotation1 <- rowAnnotation(df = annot_df1, # Dataframe containing treatment groups
                                      col = col1, # The list of treatment groups and their assigned colours
@@ -600,7 +656,7 @@ heatmap <- Heatmap(as.matrix(top_other), # The dataframe containing the heatmap 
 p <- heatmap + sidebar_annotation1
 p
 
-svglite("Genus/Heatmap-outliers.svg", width = 8, height = 12)
+svglite("Genus/Heatmap-outliers-all.svg", width = 8, height = 16)
 draw(p)
 dev.off()
 
@@ -633,10 +689,9 @@ metadata_GCMS <- metadata_GCMS %>%
 
 metadata_GCMS %>%
   group_by(Diagnosis) %>%
-  summarise(median_propionate = median(Propionate))
+  summarise(median_propionate = median(`Propionic acid`))
 
 ##### Boxplots #####
-# I don't know what the detectable range is for these.
 wilcox.test(`Acetic acid` ~ Diagnosis, metadata_GCMS)
 
 ggplot(metadata_GCMS, aes(x = Diagnosis, y = `Acetic acid`, colour = Diagnosis)) + 
@@ -847,15 +902,17 @@ library(WGCNA)
 set.seed(2024)
 metadata_GCMS = rownames_to_column(metadata, "Sample")
 metadata_GCMS = metadata_GCMS %>%
-  select(Sample, Diagnosis, `Acetic acid`,
-         `Lactic acid`, `Propionic acid`, `Butyric acid`) %>%
+  select(Sample, Diagnosis,
+         `Acetic acid`, `Lactic acid`, `Propionic acid`, `Butyric acid`) %>%
   filter(!is.na(`Acetic acid`))
 colnames(metadata_GCMS) = c("Sample", "Diagnosis", "Acetate", 
                         "Lactate", "Propionate", "Butyrate")
 
 tax_table <- read_csv("Original-files/Taxa-df_WGCNA.csv")
 ASV_genus <- tax_table %>%
-  filter(!is.na(Genus))
+  filter(!is.na(Genus)) # %>% # removal of the 'contaminants' seen. 
+  #filter(!...1 == "71a0b3f9cbf0ecb32640a3dc2ca60cf1") %>%
+  #filter(!...1 == "843a66cfd48cac87e9b001a740a2c5ee")
 ASV_list <- ASV_genus$...1
 
 df <- read_csv("Original-files/OTUdf_WGCNA.csv")
@@ -1202,6 +1259,7 @@ write.table(node_attributes, file = "all_taxa_attributes.txt", sep = "\t", row.n
 #### Top ten stacked plot ####
 genus = read_csv("Genus/Genus-normalised-metadata.csv")
 genus = genus %>%
+  filter(!Diagnosis == "Negative Control") %>%
   mutate(Prevotella = Prevotella + `[Prevotella]`) %>%
   dplyr::select(-`[Prevotella]`)
 
@@ -1242,43 +1300,36 @@ wilcox.test(Actinomyces ~ Diagnosis, df_ten)
 wilcox.test(Actinobacillus ~ Diagnosis, df_ten) # sig
 wilcox.test(Rothia ~ Diagnosis, df_ten) 
 wilcox.test(Staphylococcus ~ Diagnosis, df_ten) 
+wilcox.test(Moraxella ~ Diagnosis, df_ten) s
 
 df_long <- reshape2::melt(df_ten, id.vars = c("Diagnosis"), 
                           measure.vars = c(colnames(top_others)), 
                           variable.name = "Genus",
                           factorsAsStrings = TRUE, na.rm = TRUE)
 
-df_long_summarised <- df_long %>%
-  group_by(Diagnosis, Genus) %>%
-  dplyr::summarise(n_samples =n(),
-                   mean_value=mean(value),
-                   sd=sd(value),
-                   median=median(value),
-                   q1 = quantile(value, 0.25),  # 1st quartile
-                   q3 = quantile(value, 0.75)) # 3rd quartile
-
-df_long_summarised$Diagnosis <- factor(df_long_summarised$Diagnosis, levels = c("Controls", "IPF"))
+# 13/01/25: Changed plot for JCI submission, original plot code is in NT repo.
 
 dat_text <- data.frame(
   label=c("*", ""),
   Diagnosis=c("Controls", "IPF"),
   x = c(2,2), 
-  y = c(40,38)
+  y = c(74,0)
 )
 
 dat_text1 <- data.frame(
   label=c("*", ""),
   Diagnosis=c("Controls", "IPF"),
   x = c(7,7), 
-  y = c(8,0)
+  y = c(28,0)
 )
 
-ggplot(df_long_summarised, aes(x=Genus, y=median)) + 
-  geom_bar(aes(y = median, x = Genus, fill = Genus),
-           stat="identity") + facet_wrap(.~Diagnosis, scales="fixed") + 
-  geom_errorbar(aes(x=Genus, ymin=(q1), ymax=(q3)), width=0.3, color='black', linewidth=0.5) + 
-  scale_fill_manual(values = Palette_10) +
+ggplot(df_long, aes(x=Genus, y=value), color = Genus, fill = Genus) + 
+  geom_boxplot(outliers = F, position = position_dodge(width=0.1)) + 
+  geom_point(aes(fill=Genus, color = Genus)) +
   theme_classic() + 
+  scale_fill_manual(values = Palette_10) +
+  scale_color_manual(values = Palette_10) +
+  facet_wrap(.~Diagnosis, scales="fixed") + 
   labs(x = "", y = "Median relative abundance (%)",
        title = "Top ten most abundant genera: Controls vs. IPF",
        subtitle = "") + 
@@ -1296,7 +1347,7 @@ ggplot(df_long_summarised, aes(x=Genus, y=median)) +
         axis.line = element_line(color="grey"),    
   guides(fill = guide_legend(title = "Genus")))
 
-ggsave("Genus/Top-ten.svg", width=10, height=7)
+ggsave("Genus/Top-ten_boxplot.svg", width=10, height=7)
 
 phylum = read_csv("Phylum/Phylum-normalised-metadata.csv")
 
@@ -1365,8 +1416,11 @@ ggsave("Phylum/Top-stacked.svg", width=10, height=8)
 metadata_GCMS = read_csv("Original-files/Propionate_metadata.csv")
 metadata_GCMS = metadata_GCMS %>%
   filter(!is.na(`Acetic acid`)) %>% 
-  filter(!is.na(Burden)) %>%
-  select(Sample, Diagnosis, Burden, `Acetic acid`, `Lactic acid`, `Butyric acid`, `Propionic acid`) %>%
+  filter(!is.na(Burden)) %>% 
+  select(Sample, Diagnosis, Burden, `Acetic acid`, `Lactic acid`, `Butyric acid`, `Propionic acid`,
+         Age, Sex, Smoking_history, reflux) %>%
+  mutate(Diagnosis = factor(Diagnosis, levels = c("Controls", "IPF")),
+         reflux = factor(reflux)) %>%
   rename("Acetate" = `Acetic acid`,
          "Lactate" = `Lactic acid`,
          "Butyrate" = `Butyric acid`,
@@ -1412,7 +1466,7 @@ p <- ggplot(GCMS_tertiles[GCMS_tertiles$SCFA=="Acetate",], aes(x=Tertiles, y=val
 
 p
 
-ggsave("Genus/Acetate-Tertiles.svg", width=8, height =6)
+#ggsave("Genus/Acetate-Tertiles.svg", width=8, height =6)
 
 # Lactate
 kruskal.test(value ~ Tertiles, GCMS_tertiles[GCMS_tertiles$SCFA=="Lactate",])
@@ -1439,7 +1493,7 @@ p <- ggplot(GCMS_tertiles[GCMS_tertiles$SCFA=="Lactate",], aes(x=Tertiles, y=val
   
 p
 
-ggsave("Genus/Lactate-Tertiles.svg", width=8, height =6)
+#ggsave("Genus/Lactate-Tertiles.svg", width=8, height =6)
 
 # Propionate
 kruskal.test(value ~ Tertiles, GCMS_tertiles[GCMS_tertiles$SCFA=="Propionate",])
@@ -1464,7 +1518,7 @@ p <- ggplot(GCMS_tertiles[GCMS_tertiles$SCFA=="Propionate",], aes(x=Tertiles, y=
         plot.title = element_text(face = "bold", size=20)) + 
   guides(color = "none")
 
-p
+#p
 
 ggsave("Genus/Propionate-Tertiles.svg", width=8, height =6)
 
@@ -1493,7 +1547,45 @@ p <- ggplot(GCMS_tertiles[GCMS_tertiles$SCFA=="Butyrate",], aes(x=Tertiles, y=va
 
 p
 
-ggsave("Genus/Butyrate-Tertiles.svg", width=8, height =6)
+#ggsave("Genus/Butyrate-Tertiles.svg", width=8, height =6)
+
+##### LM Burden and SCFA ####
+# Reviewer comment: analyse SCFA with burden as a continuous
+model = lm(log(Propionate+1) ~ Burden * Diagnosis + Sex + Smoking_history, data = metadata_GCMS)
+summary(model)
+par(mar=c(2, 2, 2, 2))
+plot(model)
+
+# Check influential points
+cooksd <- cooks.distance(model)
+plot(cooksd)
+abline(h = 4/nrow(metadata_GCMS), col = "red")
+
+model_sensitivity <- lm(log(Propionate + 1) ~ Burden * Diagnosis + Sex + 
+                          Smoking_history, 
+                        data = metadata_GCMS[!rownames(metadata_GCMS) %in% 
+                                               c("ILDCON.1048.BAL", "ILDCON.1000"), ])
+
+# Compare coefficients
+summary(model)
+summary(model_sensitivity)
+
+ggplot(metadata_GCMS, aes(x = Burden, y = log(Propionate + 1), color = Diagnosis)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = Palette_fill) + 
+  theme_minimal() +
+  labs(y = "log(Acetate + 1)", x = "Bacterial Burden")
+
+## Reflux and SCFA
+reflux_sub <- subset(metadata_GCMS, !is.na(reflux))
+
+tapply(log(reflux_sub$Propionate + 1), reflux_sub$reflux, summary)
+
+boxplot(log(Propionate + 1) ~ reflux, data = reflux_sub,
+        main = "Propionate by reflux status",
+        ylab = "log(Propionate + 1)")
+wilcox.test(log(Propionate + 1) ~ reflux, data = reflux_sub)
 
 #### Heatmap with SCFA metabolites ####
 set.seed(123)
@@ -1681,6 +1773,8 @@ BC_pcoa_coord = BC_pcoa$points
 colnames(BC_pcoa_coord) = c("PCoA1", "PCoA2")
 plot.data <- cbind(df_phylum_meta, BC_pcoa_coord)
 plot.data = dplyr::rename("Groups" = "Diagnosis", plot.data)
+plot.data = plot.data %>%
+  mutate(exclude = ifelse(Sample %in% sample_outliers, as.character(Sample), NA))
 
 ggplot(data = plot.data, aes(x = PCoA1, y = PCoA2)) + 
   geom_point(aes(shape = Groups, fill = Groups),
@@ -1706,7 +1800,9 @@ ggplot(data = plot.data, aes(x = PCoA1, y = PCoA2)) +
     axis.text.x = element_text(angle=0, hjust=0.5, vjust=0,size=14),
     axis.text.y = element_text(size=14),
     axis.title = element_text(size=16),
-    axis.line = element_line(size = 0.2, linetype = "solid", colour = "grey"))
+    axis.line = element_line(size = 0.2, linetype = "solid", colour = "grey")) + 
+  ggrepel::geom_text_repel(label=plot.data$exclude,colour="black", size=3, max.overlaps = 25)
+  
 ggsave("Phylum/Supplementary-NMDS.svg", height=10, width=12)
 
 ### Stacked bar plot ###
