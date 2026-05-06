@@ -28,6 +28,8 @@ library(ggbiplot)
 library(readxl)
 library(circlize)
 library(svglite)
+library(ggplotify)
+library(glue)
 
 set.seed(2024)
 
@@ -66,6 +68,7 @@ physeq<-qza_to_phyloseq(
   tree="Original-files/merged-midrooted-tree.qza",
   taxonomy= "Original-files/taxonomy-merged-final.qza")
 physeq 
+
 metadata = read_csv("Original-files/Propionate_metadata.csv")
 #phyloseq-class experiment-level object
 #otu_table()   OTU Table:         [ 762 taxa and 255 samples ]
@@ -113,7 +116,9 @@ demo_table = metadata %>%
             N_Nodata_smoker = sum(is.na(Smoking_history)),
             N_nodata_percent = round(N_Nodata_smoker/n()*100),
             N_reflux = sum(reflux == "Yes", na.rm=TRUE),
-            N_reflux_percent = round(N_reflux/n()*100))
+            N_reflux_percent = round(N_reflux/n()*100),
+            N_PPI = sum(PPI == "Yes", na.rm=TRUE),
+            N_PPI_percent = round(N_PPI/n()*100))
 view(t(demo_table))
 
 metadata_table1 = metadata %>%
@@ -122,11 +127,11 @@ metadata_table1 = metadata %>%
          Smoking_history = ifelse(Smoking_history == "Current-smoker", "Ex-smoker", Smoking_history),
          Smoking_history = as.factor(Smoking_history),
          reflux = as.factor(reflux))
-wilcox.test(Age ~ Diagnosis, metadata_table1)
-wilcox.test(FVCpp ~ Diagnosis, metadata_table1)
-wilcox.test(`DLCO % pred` ~ Diagnosis, metadata_table1)
-fisher.test(metadata$Smoking_history, metadata$Diagnosis)
-chisq.test(metadata$Sex, metadata$Diagnosis)
+wilcox.test(Age ~ Diagnosis, metadata_table1) #p<0.0001
+wilcox.test(FVCpp ~ Diagnosis, metadata_table1) #p<0.005
+wilcox.test(`DLCO % pred` ~ Diagnosis, metadata_table1) #p<0.0001
+fisher.test(metadata$Smoking_history, metadata$Diagnosis) #p=0.06
+chisq.test(metadata$Sex, metadata$Diagnosis) #p=0.83
 
 # Demo table for GC-MS samples
 demo_table_GCMS = metadata %>%
@@ -149,7 +154,14 @@ demo_table_GCMS = metadata %>%
             N_Nodata_smoker = sum(is.na(Smoking_history)),
             N_nodata_percent = round(N_Nodata_smoker/n()*100),
             N_reflux = sum(reflux == "Yes", na.rm=TRUE),
-            N_reflux_percent = round(N_reflux/n()*100))
+            N_reflux_percent = round(N_reflux/n()*100),
+            N_Nodata_reflux = sum(is.na(reflux)),
+            N_nodata_reflux_perc = round(N_Nodata_reflux/n()*100),
+            N_PPI = sum(PPI == "Yes", na.rm=TRUE),
+            N_PPI_percent = round(N_PPI/n()*100),
+            N_Nodata_PPI = sum(is.na(reflux)),
+            N_nodata_PPI_perc = round(N_Nodata_PPI/n()*100),)
+view(t(demo_table_GCMS))
 
 metadata_table2 = metadata %>%
   filter(!is.na(`Butyric acid`)) %>%
@@ -672,15 +684,129 @@ abund_phylum <- phylum %>% select(1,Actinobacteria, Proteobacteria, Bacteroidete
 meta_table_restricted <- phylum %>%
   dplyr::select(`sample-id`, Diagnosis, Age, Sex, Smoking_history, Burden,
          `FVCpp`, `DLCO % pred`) %>%
-  drop_na() # lose 30 samples
+  drop_na() %>% # lose 30 samples 
+  mutate(Diagnosis = as.factor(Diagnosis),
+         Sex = as.factor(Sex),
+         Smoking_history = as.factor(Smoking_history))
 abund_phylum_restricted <- abund_phylum %>%
   filter(rownames(abund_phylum) %in% meta_table_restricted$`sample-id`)
 phylum_restricted <- cbind(meta_table_restricted, abund_phylum_restricted)
 colnames(meta_table_restricted) = c("sample-id", "Diagnosis", "Age", 
-                         "Sex", "Smoking_history", "Burden", "FVCpp", "DLCOpp")
-adonis2(abund_phylum_restricted ~ Diagnosis+Sex+Smoking_history+DLCOpp+FVCpp, permutations = 999,
-        data = meta_table_restricted, method="euclidean", by = "margin")
- 
+                         "Sex", "Smoking_history", "Burden", "FVCpp", "DLCOpp", "Reflux", "PPI")
+adonis2(abund_phylum_restricted ~ Sex+Smoking_history+DLCOpp+FVCpp, permutations = 999,
+        data = meta_table_restricted, method="robust.aitchison", by = "margin")
+
+## Genus
+genus <- read_csv("Genus/genus-normalised-metadata.csv") 
+abund_genus <- genus %>% select(1,Actinomyces:ncol(genus)) %>%
+  column_to_rownames("sample-id")
+abund_genus_restricted <- abund_genus %>%
+  filter(rownames(abund_genus) %in% meta_table_restricted$`sample-id`)
+meta_table_restricted <- genus %>%
+  dplyr::select(`sample-id`, Diagnosis, Age, Sex, Smoking_history, Burden,
+                `FVCpp`, `DLCO % pred`) %>%
+  drop_na() %>% # lose 30 samples 
+  mutate(Diagnosis = as.factor(Diagnosis),
+         Sex = as.factor(Sex),
+         Smoking_history = as.factor(Smoking_history))
+colnames(meta_table_restricted) = c("sample-id", "Diagnosis", "Age", 
+                                    "Sex", "Smoking_history", "Burden", "FVCpp", "DLCOpp", "Reflux", "PPI")
+
+adonis2(abund_genus_restricted ~ Diagnosis+Sex+Smoking_history+DLCOpp+FVCpp, permutations = 999,
+        data = meta_table_restricted, method="robust.aitchison", by = "margin")
+# ppDLCO p=0.015, R^2 is 1%. 
+
+adonis2(abund_genus_restricted ~ Diagnosis+DLCOpp, permutations = 999,
+        data = meta_table_restricted, method="robust.aitchison", by = "margin")
+
+meta_table_restricted_reflux <- genus %>%
+  dplyr::select(`sample-id`, Diagnosis, Age, Sex, Smoking_history, Burden,
+                `FVCpp`, `DLCO % pred`, reflux, PPI) %>%
+  drop_na() %>% # lose 30 samples 
+  mutate(Diagnosis = as.factor(Diagnosis),
+         Sex = as.factor(Sex),
+         Smoking_history = as.factor(Smoking_history))
+colnames(meta_table_restricted_reflux) = c("sample-id", "Diagnosis", "Age", 
+                                    "Sex", "Smoking_history", "Burden", "FVCpp", "DLCOpp", "Reflux", "PPI")
+abund_genus_restricted <- abund_genus %>%
+  filter(rownames(abund_genus) %in% meta_table_restricted_reflux$`sample-id`)
+
+permanova_p = adonis2(abund_genus_restricted ~ DLCOpp + Reflux, permutations = 999,
+                      data = meta_table_restricted_reflux, method="robust.aitchison", by = "margin") 
+# NS but DLCOpp is also NS, may be underpowered. 
+
+# PCoA plot
+abund_genus_restricted_pcoa = vegdist(abund_genus_restricted, "robust.aitchison")
+RA_pcoa = cmdscale(abund_genus_restricted_pcoa, k=2, eig=T)  
+
+RA_pcoa_eig <- RA_pcoa$eig
+RA_total_variance <- sum(RA_pcoa_eig[RA_pcoa_eig > 0])
+
+percentage_explained_pco1 <- (RA_pcoa_eig[1] / RA_total_variance) * 100
+percentage_explained_pco2 <- (RA_pcoa_eig[2] / RA_total_variance) * 100
+
+RA_pcoa_coord = RA_pcoa$points
+
+colnames(RA_pcoa_coord) = c("PCoA1", "PCoA2")
+
+plot.data <- cbind(meta_table_restricted_reflux, RA_pcoa_coord)
+
+fig = ggplot(data = plot.data, aes(x = PCoA1, y = PCoA2)) + 
+  geom_point(aes(shape = Reflux, fill = Reflux),
+             size = 3) + 
+  stat_ellipse(aes(fill = Reflux, color = Reflux),
+               alpha=0.2, level = 0.95, geom = "polygon") +
+  # scale_"" is used to design the plot
+  scale_fill_manual(values = Palette_fill) + 
+  scale_colour_manual(values = Palette_color) + 
+  scale_shape_manual(values = c(21,21,21)) +
+  labs(title = "Reported reflux in IPF patients ",
+       subtitle = glue("Permanova: p={round(permanova_p[2,5], 5)}\n"),
+       x = paste("PCoA axis 1(", round(percentage_explained_pco1, digits = 2), "%)", sep = ""),
+       y = paste("PCoA axis 2 (", round(percentage_explained_pco2, digits = 2), "%)", sep = "")) +
+  theme(
+    plot.title = element_text(size=20), plot.subtitle = element_text(size=18, face="italic"),
+    legend.position.inside = c(0.05,0.10), legend.title = element_text(size=18, face = "bold", colour = "black"),
+    legend.text = element_text(size=16, face = "italic"), legend.position = "inside",
+    legend.background = element_blank(), legend.key = element_blank(),
+    panel.background = element_rect(fill = "white"), 
+    panel.border = element_rect(color = "grey", fill = NA, linewidth=0.8),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle=0, hjust=0.5, vjust=0,size=14),
+    axis.text.y = element_text(size=14),
+    axis.title = element_text(size=16),
+    axis.line = element_line(size = 0.2, linetype = "solid", colour = "grey"))
+
+fig_pcoa1 = ggplot(plot.data) + 
+  geom_boxplot(aes(x = Reflux, y=PCoA1,
+                   fill = Reflux, alpha=0.2),
+               show.legend = F) + coord_flip() +
+  #scale_y_continuous(expand=c(0,0.001)) + 
+  labs(x=NULL, y=NULL) + theme_classic() + 
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank()) +
+  guides(x = "none", y = "none") +
+  scale_fill_manual(values = Palette_fill) 
+
+fig_pcoa2 = ggplot(plot.data) + 
+  geom_boxplot(aes(x = Reflux, y=PCoA2,
+                   fill = Reflux, alpha=0.2),
+               show.legend = F) +
+  #scale_y_continuous(expand=c(0,0.001)) + 
+  labs(x=NULL, y=NULL) + theme_classic() + 
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank()) + 
+  guides(x = "none", y = "none") +
+  scale_fill_manual(values = Palette_fill)
+
+fig = fig %>%
+  aplot::insert_bottom(fig_pcoa1, height = 0.1) %>%
+  aplot::insert_right(fig_pcoa2, width=0.1) %>%
+  as.ggplot() + theme(aspect.ratio = 0.5)
+
+fig
+
 #### GCMS ####
 metadata_GCMS <- read_csv("Original-files/Propionate_metadata.csv")
 metadata_GCMS <- metadata_GCMS %>%
@@ -690,6 +816,45 @@ metadata_GCMS <- metadata_GCMS %>%
 metadata_GCMS %>%
   group_by(Diagnosis) %>%
   summarise(median_propionate = median(`Propionic acid`))
+
+## Negative control plot ##
+control_BAL = read_csv("Original-files/Negative_BAL.csv")
+control_BAL$Diagnosis = "Negative"
+colnames(control_BAL) = c("Sample", "Acetic acid", "Propionic acid", "Butyric acid", "Lactic acid", "Diagnosis")
+GCMS_data_neg = metadata_GCMS %>%
+  select(Sample, Diagnosis, `Acetic acid`, `Propionic acid`, `Butyric acid`, `Lactic acid`)
+GCMS_data_neg = rbind(control_BAL, GCMS_data_neg) 
+colnames(GCMS_data_neg) = c("Sample", "Acetate", "Propionate", "Butyrate", "Lactate", "Diagnosis")
+GCMS_data_neg_long = melt(GCMS_data_neg,
+                     id.vars = c("Sample", "Diagnosis"),
+                     variable.name = "SCFA")
+
+kruskal.test(Acetate ~ Diagnosis, GCMS_data_neg)
+dunnTest(Acetate ~ Diagnosis, GCMS_data_neg)
+
+kruskal.test(Butyrate ~ Diagnosis, GCMS_data_neg)
+dunnTest(Butyrate ~ Diagnosis, GCMS_data_neg)
+
+kruskal.test(Propionate ~ Diagnosis, GCMS_data_neg)
+dunnTest(Propionate ~ Diagnosis, GCMS_data_neg)
+
+kruskal.test(Lactate ~ Diagnosis, GCMS_data_neg)
+dunnTest(Lactate ~ Diagnosis, GCMS_data_neg)
+
+ggplot(GCMS_data_neg_long, aes(x = Diagnosis, y = value, colour = Diagnosis)) + 
+  geom_boxplot(outliers = F) + facet_wrap(SCFA~., scales = "free") + 
+  geom_dotplot(binaxis="y", stackdir = "center", binwidth = , position="dodge", aes(fill=Diagnosis)) +
+  scale_fill_manual(values=c("#BC3C29FF", "#0072B5FF", "#20854E")) + 
+  theme_classic() + 
+  scale_color_manual(values=c("#BC3C29FF", "#0072B5FF", "#20854E")) +
+  labs(y = "[Metabolite in BAL] (µM)", x = "") +
+  theme(axis.text = element_text(size=14),
+        axis.title = element_text(size=16),
+        legend.position = "none", 
+        strip.text = element_text(size=12, face = "bold"),
+        plot.title = element_text(size=18, hjust=0.5), family = "bold")
+
+ggsave("Genus/GCMS-control-boxplot.svg", width = 10, height = 8)
 
 ##### Boxplots #####
 wilcox.test(`Acetic acid` ~ Diagnosis, metadata_GCMS)
@@ -1418,7 +1583,7 @@ metadata_GCMS = metadata_GCMS %>%
   filter(!is.na(`Acetic acid`)) %>% 
   filter(!is.na(Burden)) %>% 
   select(Sample, Diagnosis, Burden, `Acetic acid`, `Lactic acid`, `Butyric acid`, `Propionic acid`,
-         Age, Sex, Smoking_history, reflux) %>%
+         Age, Sex, Smoking_history, reflux, PPI) %>%
   mutate(Diagnosis = factor(Diagnosis, levels = c("Controls", "IPF")),
          reflux = factor(reflux)) %>%
   rename("Acetate" = `Acetic acid`,
@@ -1426,7 +1591,6 @@ metadata_GCMS = metadata_GCMS %>%
          "Butyrate" = `Butyric acid`,
          "Propionate" = `Propionic acid`) %>%
   column_to_rownames("Sample")
-  
 
 GCMS_tertiles = metadata_GCMS %>%
   mutate(Tertiles = ntile(Burden, 3),
@@ -1434,11 +1598,11 @@ GCMS_tertiles = metadata_GCMS %>%
                               Tertiles == "2" ~ "Medium",
                               Tertiles == "3" ~ "High"),
          Tertiles = factor(Tertiles, levels = c("Low", "Medium", "High"))) %>%
-  dplyr::select(Diagnosis, Acetate, Propionate, Butyrate, Lactate, Tertiles) %>%
+  dplyr::select(Diagnosis, Acetate, Propionate, Butyrate, Lactate, Tertiles, reflux, PPI) %>%
   rownames_to_column(., "Sample")
 
 GCMS_tertiles = reshape2::melt(GCMS_tertiles, 
-                     id.vars = c("Sample", "Diagnosis", "Tertiles"),
+                     id.vars = c("Sample", "Diagnosis", "Tertiles", "reflux", "PPI"),
                      variable.name = "SCFA")
 
 # Acetate
@@ -1516,11 +1680,11 @@ p <- ggplot(GCMS_tertiles[GCMS_tertiles$SCFA=="Propionate",], aes(x=Tertiles, y=
         strip.text.y = element_text(size=14),
         legend.position = "bottom",
         plot.title = element_text(face = "bold", size=20)) + 
-  guides(color = "none")
+  guides(color = "none") 
 
-#p
+p
 
-ggsave("Genus/Propionate-Tertiles.svg", width=8, height =6)
+#ggsave("Genus/Propionate-Tertiles.svg", width=8, height =6)
 
 # Butyrate
 kruskal.test(value ~ Tertiles, GCMS_tertiles[GCMS_tertiles$SCFA=="Butyrate",])
