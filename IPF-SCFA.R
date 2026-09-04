@@ -5,18 +5,15 @@ renv::restore()
 setwd("~/OneDrive - Imperial College London/Projects/Experiments/NT001_Microbiota-analysis/Propionate/")
 path <- getwd()
 
-library(ggpicrust2)
 library("phyloseq")
 library("dplyr")
 library("tidyverse")
 library("vegan")
 library("reshape2")
-library("qiime2R")
+library(qiime2R)
 library("decontam")
-#BiocManager::install("microbiome")
 library("microbiome")
 library(pacman)
-#if(!require(pacman))install.packages("pacman")
 pacman::p_load('dplyr', 'tidyr', 'gapminder',
                'ggplot2',  'ggalt',
                'forcats', 'R.utils', 'png', 
@@ -75,7 +72,7 @@ metadata = read_csv("Original-files/Propionate_metadata.csv")
 #tax_table()   Taxonomy Table:    [ 762 taxa by 7 taxonomic ranks ]
 #phy_tree()    Phylogenetic Tree: [ 762 tips and 757 internal nodes ]
 
-metadata = metadata %>%
+metadata = metadata %>% # Sample IDs were changed :()
   mutate(Sample = case_when(Sample == "ILDCON.1022" ~ "BRU.1022",
                             Sample == "ILDCON.1066" ~ "BRU.1066",
                             Sample == "ILDCON.1017" ~ "BRU.1017",
@@ -577,7 +574,6 @@ ggsave("Genus/Stackedbarplot-outliers.svg", width=20, height=18)
 # BRU.04340 Streptococcus and "Others"
 
 #### Heatmap to see if "outliers" cluster together ####
-set.seed(123)
 genus_all = read_csv("Genus/Genus-all-normalised-metadata.csv")
 abund_genus_all <- genus_all %>%
   dplyr::select(1,Actinomyces:ncol(genus_all))
@@ -1461,11 +1457,11 @@ wilcox.test(Prevotella ~ Diagnosis, df_ten) # sig
 wilcox.test(Veillonella ~ Diagnosis, df_ten) 
 wilcox.test(Haemophilus ~ Diagnosis, df_ten) 
 wilcox.test(Gemella ~ Diagnosis, df_ten) 
-wilcox.test(Actinomyces ~ Diagnosis, df_ten) 
+wilcox.test(Sphingomonas ~ Diagnosis, df_ten) 
 wilcox.test(Actinobacillus ~ Diagnosis, df_ten) # sig
 wilcox.test(Rothia ~ Diagnosis, df_ten) 
 wilcox.test(Staphylococcus ~ Diagnosis, df_ten) 
-wilcox.test(Moraxella ~ Diagnosis, df_ten) s
+wilcox.test(Moraxella ~ Diagnosis, df_ten)
 
 df_long <- reshape2::melt(df_ten, id.vars = c("Diagnosis"), 
                           measure.vars = c(colnames(top_others)), 
@@ -1600,6 +1596,11 @@ GCMS_tertiles = metadata_GCMS %>%
          Tertiles = factor(Tertiles, levels = c("Low", "Medium", "High"))) %>%
   dplyr::select(Diagnosis, Acetate, Propionate, Butyrate, Lactate, Tertiles, reflux, PPI) %>%
   rownames_to_column(., "Sample")
+
+cor.test(metadata_GCMS$Burden, metadata_GCMS$Propionate, method = "spearman")
+cor.test(metadata_GCMS$Burden, metadata_GCMS$Acetate, method = "spearman")
+cor.test(metadata_GCMS$Burden, metadata_GCMS$Butyrate, method = "spearman")
+cor.test(metadata_GCMS$Burden, metadata_GCMS$Lactate, method = "spearman")
 
 GCMS_tertiles = reshape2::melt(GCMS_tertiles, 
                      id.vars = c("Sample", "Diagnosis", "Tertiles", "reflux", "PPI"),
@@ -1937,8 +1938,8 @@ BC_pcoa_coord = BC_pcoa$points
 colnames(BC_pcoa_coord) = c("PCoA1", "PCoA2")
 plot.data <- cbind(df_phylum_meta, BC_pcoa_coord)
 plot.data = dplyr::rename("Groups" = "Diagnosis", plot.data)
-plot.data = plot.data %>%
-  mutate(exclude = ifelse(Sample %in% sample_outliers, as.character(Sample), NA))
+# plot.data = plot.data %>%
+#   mutate(exclude = ifelse(Sample %in% sample_outliers, as.character(Sample), NA))
 
 ggplot(data = plot.data, aes(x = PCoA1, y = PCoA2)) + 
   geom_point(aes(shape = Groups, fill = Groups),
@@ -1964,9 +1965,7 @@ ggplot(data = plot.data, aes(x = PCoA1, y = PCoA2)) +
     axis.text.x = element_text(angle=0, hjust=0.5, vjust=0,size=14),
     axis.text.y = element_text(size=14),
     axis.title = element_text(size=16),
-    axis.line = element_line(size = 0.2, linetype = "solid", colour = "grey")) + 
-  ggrepel::geom_text_repel(label=plot.data$exclude,colour="black", size=3, max.overlaps = 25)
-  
+    axis.line = element_line(size = 0.2, linetype = "solid", colour = "grey"))
 ggsave("Phylum/Supplementary-NMDS.svg", height=10, width=12)
 
 ### Stacked bar plot ###
@@ -2028,3 +2027,27 @@ ggsave("Genus/Burden.svg", width=4, height=6)
 kruskal.test(Burden ~ Diagnosis, data = df_phylum)
 dunnTest(Burden ~ Diagnosis, data = df_phylum)
 
+#### Propionate in basal media ####
+basal_df = data.frame(
+  Cycle = rep(paste0("Cycle ", 1:4), each = 3),
+  Treatment = rep(c("0 mM", "1 mM", "5 mM"), times = 4),
+  Concentration = c(40.75, 79.78, 87.48, 89.31, 85.64, 95.53, 84.31, 86.94, 89.30, 72.98, 88.60, 35.10,
+                    51.13, 92.55, 147.60, 77.10, 77.41, 86.28, 85.89, 81.23, 121.83, 76.58, 86.26, 34.52))
+
+ggplot(basal_df, aes(x=Treatment, y=Concentration, color = Treatment)) + 
+  geom_boxplot(outliers = F) + 
+  geom_dotplot(binaxis="y", stackdir = "center", 
+               binwidth = 3, position="dodge", aes(fill=Concentration)) +
+  scale_fill_manual(values=c("black", "red", "navy")) + 
+  theme_classic() + 
+  scale_color_manual(values=c("black", "red", "navy")) +
+  labs(y = "[Propionate] (nM)",
+       title = "") + ylim(c(0,200)) +
+  theme(axis.text = element_text(size=14),
+        axis.title = element_text(size=16),
+        legend.position = "none",
+        plot.title = element_text(size=18, hjust=0.5), family = "bold")
+
+kruskal.test(Concentration ~ Treatment, basal_df)
+
+ggsave("Genus/Propionate-basal-boxplot.svg", width = 4, height = 6)
