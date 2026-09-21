@@ -1468,6 +1468,10 @@ df_long <- reshape2::melt(df_ten, id.vars = c("Diagnosis"),
                           variable.name = "Genus",
                           factorsAsStrings = TRUE, na.rm = TRUE)
 
+df_long_summary = df_long %>%
+  group_by(Diagnosis, Genus) %>%
+  summarise(median = median(value))
+
 # 13/01/25: Changed plot for JCI submission, original plot code is in NT repo.
 
 dat_text <- data.frame(
@@ -1480,7 +1484,7 @@ dat_text <- data.frame(
 dat_text1 <- data.frame(
   label=c("*", ""),
   Diagnosis=c("Controls", "IPF"),
-  x = c(7,7), 
+  x = c(6,6), 
   y = c(28,0)
 )
 
